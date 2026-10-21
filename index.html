@@ -49,18 +49,34 @@ footer{margin-top:14px;font-size:11px;opacity:.65}footer i{font-style:normal;ani
 #pb{display:flex;gap:4px;padding:8px}#pb button{font:44px/1 "Segoe UI Symbol","Noto Sans Symbols 2","DejaVu Sans",serif;padding:2px 8px}
 @media(max-width:940px){aside{height:auto;max-width:none;flex-basis:100%}#hist{flex:none;max-height:230px}}
 @media(prefers-reduced-motion:reduce){*,::after{animation:none!important;transition:none!important}}
+#arch,#bbs{margin-top:14px;max-width:calc(var(--bs) + 354px)}
+#arch summary{cursor:pointer;color:var(--hd);font-weight:700}
+#alist .ar{display:flex;gap:10px;flex-wrap:wrap;padding:2px 0;border-bottom:1px dotted var(--bd)}
+#alist button{background:none;border:0;padding:0;color:var(--lk);text-decoration:underline;cursor:pointer;font:inherit}
+#posts{max-height:260px;overflow:auto;background:var(--bg);border:1px solid var(--bd);padding:4px 8px;margin:6px 0}
+.po{margin:0 0 8px}.pn{color:var(--ok);font-weight:700}.pi{opacity:.7;font-size:11px}
+.po .t{padding-left:12px;white-space:pre-wrap;word-break:break-word}.gt{color:#789922}
+.cf{display:flex;gap:6px;align-items:flex-start}.cf textarea{flex:1;font:inherit;background:var(--bg);color:var(--tx);border:1px solid var(--bd);resize:vertical}
+#cmsg{color:var(--hv);font-size:12px}
+.cf input{font:inherit;width:110px;background:var(--bg);color:var(--tx);border:1px solid var(--bd)}.cf small{opacity:.7;white-space:nowrap}
+#mi{font-size:12px;word-break:break-word}#mi:empty{display:none}.m.cm::after{content:" •";opacity:.6}
+#mcm{width:100%;margin-top:4px;font:inherit;background:var(--bg);color:var(--tx);border:1px solid var(--bd)}#pres{opacity:.75}
+#cap{margin-top:4px}#cap span{font-size:17px;line-height:1}#cap b{color:var(--ok)}#cool,#last{font-size:12px;opacity:.85}
 </style></head><body>
 <div id="top"><b>Secret Chinese Daily Chess</b><span class="jp">无尽的国际象棋</span><span class="sub">bouncing on it crazy style</span></div>
 <main>
  <div id="board"></div>
  <aside>
-  <div class="box"><div class="ph"><b>Anonymous</b> <span id="meta"></span></div><div id="st">Loading…</div><div id="msg"></div></div>
+  <div class="box"><div class="ph"><b>Anonymous</b> <span id="meta"></span><span id="pres"></span></div><div id="st">Loading…</div><div id="msg"></div><div id="cool"></div><div id="last"></div><div id="cap"></div><input id="mcm" maxlength="60" placeholder="comment on your next move (optional)" autocomplete="off"></div>
   <div class="nav"><button id="nf" title="Start (↑)">|&lt;</button><button id="np" title="Back (←)">&lt;</button><button id="nn" title="Forward (→)">&gt;</button><button id="nl" title="Live (↓)">&gt;|</button></div>
-  <div id="hist"></div>
-  <div class="ctl"><button id="flip">Flip board</button><button id="back" style="display:none">Back to live</button><button id="pgn">Copy PGN</button><button id="reset">Reset game</button></div>
+  <div id="hist"></div><div id="mi" class="box"></div>
+  <div class="ctl"><button id="flip">Flip board</button><button id="back" style="display:none">Back to live</button><button id="pgn">Copy PGN</button><button id="lnk">Copy link</button><button id="reset">Reset game</button></div>
   <p id="warn"></p>
  </aside>
 </main>
+<details id="arch" class="box"><summary>Archive of past games</summary><div id="alist">...</div></details>
+<section id="bbs" class="box"><div class="ph"><b>Thread</b> <span id="cmsg"></span></div><div id="posts"></div>
+ <div class="cf"><input id="cname" maxlength="16" placeholder="name" autocomplete="off"><textarea id="cin" rows="2" maxlength="300" placeholder="say something (Enter posts, Shift+Enter new line, start a line with > for greentext)"></textarea><button id="cpost">post</button><small id="cc">0/300</small></div></section>
 <footer>arrow keys step through the moves <i></i> &nbsp;·&nbsp; inferno is fat</footer>
 <div id="promo"><div id="pw"><p>Promote to…</p><div id="pb"></div></div></div>
 <script>/*
@@ -1818,7 +1834,7 @@ if (typeof define !== 'undefined')
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
   import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-  import { getDatabase, ref, get, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+  import { getDatabase, ref, get, set, onValue, push, query, limitToLast, onDisconnect } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyAxJ8oPYl3qILgB9R3riZe9POhwBsUVnIM",
@@ -1843,35 +1859,30 @@ if (typeof define !== 'undefined')
     });
   });
 
-  window.fbLoad = async function() {
-    await window.fbLoaded;
-    const snapshot = await get(ref(db, "game"));
-    const data = snapshot.val();
-    return { moves: (data && data.moves) || "", resets: (data && data.resets) || 0 };
-  };
-
-  window.fbSave = async function(s) {
-    await window.fbLoaded;
-    await set(ref(db, "game"), s);
-  };
-
-  window.fbListen = function(callback) {
-    window.fbLoaded.then(() => {
-      onValue(ref(db, "game"), (snapshot) => {
-        const data = snapshot.val();
-        callback({ moves: (data && data.moves) || "", resets: (data && data.resets) || 0 });
-      });
-    });
-  };
+  const authed = () => Promise.race([window.fbLoaded, new Promise((_, no) => setTimeout(() => no(new Error("auth timeout")), 10000))]);
+  const val = d => ({ moves: (d && d.moves) || "", resets: (d && d.resets) || 0, at: (d && d.at) || 0, info: (d && d.info) || {} });
+  window.fbLoad = async () => { await authed(); return val((await get(ref(db, "game"))).val()); };
+  window.fbSave = async s => { await authed(); await set(ref(db, "game"), s); };
+  window.fbListen = cb => { authed().then(() => onValue(ref(db, "game"), snap => cb(val(snap.val())))).catch(() => {}); };
+  window.fbArchive = async (n, rec) => { await authed(); await set(ref(db, "archive/g" + n), { ...rec, n: n + 1 }); };
+  window.fbArchiveList = async () => { await authed(); return Object.values((await get(ref(db, "archive"))).val() || {}).sort((a, b) => b.at - a.at); };
+  window.fbPost = async rec => { await authed(); await push(ref(db, "chat"), rec); };
+  window.fbChat = cb => { authed().then(() => onValue(query(ref(db, "chat"), limitToLast(50)), snap => { const a = []; snap.forEach(c => { a.push(c.val()); }); cb(a); })).catch(() => {}); };
+  window.fbPresence = (id, cb) => { authed().then(() => {
+    const me = ref(db, "presence/" + id);
+    onValue(ref(db, ".info/connected"), s => { if (s.val() === true) onDisconnect(me).remove().then(() => set(me, Date.now())); });
+    onValue(ref(db, "presence"), s => cb(s.numChildren()));
+  }).catch(() => {}); };
 </script>
 
 <script>
 // ====== SETUP ======
 const POLL = 5000;
+const COOLDOWN_H = 12; // hours a browser must wait between its own moves (0 = off, handy for testing)
 // ===================
 const FILES = "abcdefgh", $ = id => document.getElementById(id);
 const G = {k:"♚",q:"♛",r:"♜",b:"♝",n:"♞",p:"♟"}, VS = "\uFE0E";
-let st = {moves:"", resets:0}, live, game, view = null, flip = false, sel = null, busy = false, mt;
+let st = {moves:"", resets:0}, live, game, view = null, flip = false, sel = null, busy = false, mt, ready = false, rep = null, repNo = 0, repInfo = {}, hashDone = false;
 
 function build(str, upto) {
   const g = new Chess(), a = str ? str.split(" ") : [];
@@ -1879,9 +1890,7 @@ function build(str, upto) {
   return g;
 }
 async function load() {
-  if (window.fbLoad) {
-    try { return await window.fbLoad(); } catch (e) { return {moves:"", resets:0}; }
-  }
+  if (window.fbLoad) return await window.fbLoad(); // errors propagate: a failed read is never treated as an empty game
   try { return JSON.parse(localStorage.getItem("eg")) || {moves:"", resets:0}; } catch (e) { return {moves:"", resets:0}; }
 }
 async function save(s) {
@@ -1891,7 +1900,7 @@ async function save(s) {
   try { localStorage.setItem("eg", JSON.stringify(s)); } catch (e) {}
 }
 function msg(t) { $("msg").textContent = t; clearTimeout(mt); mt = setTimeout(() => $("msg").textContent = "", 5000); }
-function rebuild() { live = build(st.moves); game = view === null ? live : build(st.moves, view); draw(); }
+function rebuild() { const mv = rep !== null ? rep : st.moves; live = build(mv); game = view === null ? live : build(mv, view); draw(); tick(); caps(); }
 
 function status(g) {
   if (g.in_checkmate()) return (g.turn() === "w" ? "Black" : "White") + " wins by checkmate! Reset to go again.";
@@ -1907,7 +1916,7 @@ const cp = () => view === null ? live.history().length : view;
 function go(p) {
   if (!live) return;
   const n = live.history().length; p = Math.max(0, Math.min(n, p));
-  view = p >= n ? null : p; sel = null; rebuild();
+  view = p >= n ? null : p; sel = null; rebuild(); if (rep === null) hashSet();
 }
 function slide(last, ply) { // glide the piece that just moved (only for single forward steps)
   const d = drawn; drawn = {ply, r: st.resets};
@@ -1940,20 +1949,21 @@ function draw() {
       + (p ? `<span class="${p.color}">${G[p.type]+VS}</span>` : "") + `</div>`;
   }));
   $("board").innerHTML = h; slide(last, view === null ? H.length : view);
-  $("st").textContent = (view !== null ? `Viewing after move ${view}. ` : "") + status(g);
-  $("back").style.display = view === null ? "none" : "";
+  $("st").textContent = (rep !== null ? `[archive No.${repNo}] ` : "") + (view !== null ? `Viewing after move ${view}. ` : "") + status(g);
+  $("back").style.display = view === null && rep === null ? "none" : "";
   const at = view === null ? H.length : view; let hh = "";
   for (let i = 0; i < H.length; i += 2)
     hh += `<span class="n">${i/2+1}.</span>` + [0,1].map(k => H[i+k] ? `<span class="m${at===i+k+1?" cur":""}" data-p="${i+k+1}">${H[i+k]}</span>` : "<span></span>").join("");
-  $("hist").innerHTML = hh || "<small style='grid-column:1/4'>No moves yet. Be brave.</small>"; navUI(at);
-  $("meta").textContent = `No.${st.resets+1} · ${H.length} move${H.length===1?"":"s"} played`;
+  $("hist").innerHTML = hh || "<small style='grid-column:1/4'>No moves yet. Be brave.</small>"; navUI(at); infoUI(at);
+  $("meta").textContent = `${rep !== null ? "Archive No." + repNo : "No." + (st.resets+1)} · ${H.length} move${H.length===1?"":"s"} played`;
   $("warn").textContent = window.fbSave ? "" : "Local mode: moves only save in this browser.";
 }
 
 function click(s) {
-  if (view !== null || busy || game.game_over()) return;
+  if (!ready || rep !== null || view !== null || busy || game.game_over()) return;
   if (sel) {
     const mv = game.moves({square:sel, verbose:true}).filter(m => m.to === s);
+    if (mv.length && coolLeft() > 0) return msg(`You already moved. Next move in ${fmt(coolLeft())}.`);
     if (mv.length) return mv[0].promotion ? askPromo(sel, s) : play(sel, s);
   }
   const p = game.get(s);
@@ -1973,54 +1983,156 @@ async function play(f, t, p) {
     if (cur.moves !== st.moves || cur.resets !== st.resets) { st = cur; msg("Someone got there first. Board refreshed."); }
     else {
       const g = build(st.moves);
-      if (g.move({from:f, to:t, promotion:p})) { st.moves = (st.moves ? st.moves + " " : "") + f + t + (p || ""); await save(st); }
+      if (g.move({from:f, to:t, promotion:p})) { st.moves = (st.moves ? st.moves + " " : "") + f + t + (p || ""); st.at = Date.now(); st.info = {...(st.info || {}), ["m" + st.moves.split(" ").length]: mkInfo(st.at)}; await save(st); $("mcm").value = ""; setLast(st.at); }
     }
   } catch (e) { msg("Couldn't reach the database. Try again."); try { st = await load(); } catch (e2) {} }
   busy = false; sel = null; rebuild();
 }
-async function sync() {
-  if (busy) return;
-  try {
-    const c = await load();
-    if (c.moves !== st.moves || c.resets !== st.resets) { if (c.resets !== st.resets) view = null; st = c; sel = null; rebuild(); }
-  } catch (e) {}
+function apply(c) {
+  if (ready && c.moves === st.moves && c.resets === st.resets) return;
+  if (!ready) flip = build(c.moves).turn() === "b";
+  if (c.resets !== st.resets) view = null;
+  st = c; sel = null; ready = true; rebuild(); openHash();
 }
+async function sync() { if (busy) return; try { apply(await load()); } catch (e) {} }
 
 $("board").onclick = e => { const s = e.target.closest(".sq"); if (s) click(s.dataset.s); };
 $("hist").onclick = e => { const p = +e.target.dataset.p; if (p) go(p); };
-$("back").onclick = () => { view = null; rebuild(); };
+$("back").onclick = () => { rep = null; view = null; drawn = null; rebuild(); hashSet(); };
 $("flip").onclick = () => { flip = !flip; draw(); };
 $("pgn").onclick = () => {
   const t = live.pgn();
   (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => msg("PGN copied."), () => prompt("Copy PGN:", t));
 };
+const resOf = mv => { const g = build(mv); return g.in_checkmate() ? (g.turn() === "w" ? "0-1" : "1-0") : g.game_over() ? "1/2-1/2" : "*"; };
 $("reset").onclick = async () => {
-  if (!confirm("Reset the game for EVERYONE who visits? This wipes the shared history.")) return;
-  try { st = {moves:"", resets:st.resets + 1}; await save(st); view = null; sel = null; flip = false; rebuild(); }
-  catch (e) { msg("Couldn't reach the database."); }
+  if (!ready) return;
+  if (!confirm("Reset the game for EVERYONE who visits? The current game is saved to the archive first.")) return;
+  try {
+    const cur = await load();
+    if (cur.moves) {
+      if (!window.fbArchive) throw 0;
+      await window.fbArchive(cur.resets, {moves: cur.moves, result: resOf(cur.moves), at: Date.now(), ...(Object.keys(cur.info || {}).length ? {info: cur.info} : {})});
+    }
+    const next = {moves:"", resets:cur.resets + 1, at:Date.now()};
+    await save(next); st = next; rep = null; view = null; sel = null; flip = false; drawn = null; rebuild();
+    if ($("arch").open) loadArchive();
+  } catch (e) { msg("Couldn't archive and reset. Nothing was changed."); }
 };
 $("nf").onclick = () => go(0); $("np").onclick = () => go(cp() - 1);
 $("nn").onclick = () => go(cp() + 1); $("nl").onclick = () => go(1e9);
 document.addEventListener("keydown", e => {
-  if (!live || e.ctrlKey || e.metaKey || e.altKey || $("promo").style.display === "flex") return;
+  if (!live || e.ctrlKey || e.metaKey || e.altKey || $("promo").style.display === "flex" || /^(INPUT|TEXTAREA)$/.test(e.target.tagName)) return;
   const k = {ArrowLeft: cp() - 1, ArrowRight: cp() + 1, ArrowUp: 0, Home: 0, ArrowDown: 1e9, End: 1e9}[e.key];
   if (k !== undefined) { e.preventDefault(); go(k); }
 });
 document.addEventListener("visibilitychange", () => { if (!document.hidden) sync(); });
 
-(async () => {
-  try { 
-    st = await load(); 
-    if (window.fbListen) {
-      window.fbListen((data) => {
-        if (!busy && (data.moves !== st.moves || data.resets !== st.resets)) {
-          if (data.resets !== st.resets) view = null;
-          st = data; sel = null; rebuild();
-        }
-      });
-    }
-  } catch (e) { msg("Can't reach the database. Check configuration and rules."); }
-  live = build(st.moves); flip = live.turn() === "b";
-  rebuild(); setInterval(sync, POLL);
-})();
+function openReplay(r) { rep = r.moves; repNo = r.n; repInfo = r.info || {}; view = 0; sel = null; drawn = null; rebuild(); window.scrollTo(0, 0); }
+async function loadArchive() {
+  const el = $("alist"); el.textContent = "loading...";
+  try {
+    const list = await window.fbArchiveList(); el.textContent = "";
+    if (!list.length) { el.textContent = "Nothing here yet. Finished games land here when someone hits reset."; return; }
+    list.forEach(r => {
+      const row = document.createElement("div"); row.className = "ar";
+      const n = r.moves ? r.moves.split(" ").length : 0, lab = document.createElement("span");
+      lab.textContent = `No.${r.n} · ${r.result === "*" ? "unfinished" : r.result} · ${n} moves · ${new Date(r.at).toLocaleDateString()}`;
+      const b = document.createElement("button"); b.textContent = "replay"; b.onclick = () => openReplay(r);
+      row.append(lab, b); el.append(row);
+    });
+  } catch (e) { el.textContent = "Couldn't load the archive."; }
+}
+
+let myId = Math.random().toString(36).slice(2, 10), lastPost = 0;
+try { myId = localStorage.getItem("eg-id") || (localStorage.setItem("eg-id", myId), myId); } catch (e) {}
+const cm = t => { $("cmsg").textContent = t; setTimeout(() => $("cmsg").textContent = "", 4000); };
+function renderChat(list) {
+  const el = $("posts"), stick = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+  el.textContent = list.length ? "" : "No posts yet.";
+  list.forEach(p => { // textContent only: posts are never parsed as HTML
+    const d = document.createElement("div"); d.className = "po";
+    const h = document.createElement("div"), nm = document.createElement("span"), i = document.createElement("span");
+    nm.className = "pn"; nm.textContent = (p.n ? String(p.n).slice(0, 16) : "Anonymous") + " "; i.className = "pi";
+    i.textContent = `ID:${String(p.id || "").slice(0, 8)} · ${new Date(p.at).toLocaleString([], {dateStyle:"short", timeStyle:"short"})}`;
+    h.append(nm, i); d.append(h);
+    const t = document.createElement("div"); t.className = "t";
+    String(p.t || "").split("\n").forEach(l => { const s = document.createElement("div"); s.textContent = l || " "; if (l.startsWith(">")) s.className = "gt"; t.append(s); });
+    d.append(t); el.append(d);
+  });
+  if (stick) el.scrollTop = el.scrollHeight;
+}
+async function sendPost() {
+  const ta = $("cin"), t = ta.value.trim(), nm = $("cname").value.trim().slice(0, 16);
+  if (!t) return;
+  if (Date.now() - lastPost < 4000) return cm("Slow down a little.");
+  try { await window.fbPost({t: t.slice(0, 300), id: myId, at: Date.now(), ...(nm ? {n: nm} : {})}); ta.value = ""; $("cc").textContent = "0/300"; lastPost = Date.now(); }
+  catch (e) { cm("Couldn't post."); }
+}
+
+const coolLeft = () => { let t = 0; try { t = +localStorage.getItem("eg-last") || 0; } catch (e) {} return COOLDOWN_H ? Math.max(0, t + COOLDOWN_H * 36e5 - Date.now()) : 0; };
+const setLast = t => { try { localStorage.setItem("eg-last", String(t)); } catch (e) {} tick(); };
+const fmt = ms => { const m = Math.ceil(ms / 6e4); return `${Math.floor(m / 60)}h ${m % 60}m`; };
+const ago = ms => { const m = Math.floor(ms / 6e4); return m < 1 ? "just now" : m < 60 ? m + "m ago" : m < 2880 ? Math.floor(m / 60) + "h ago" : Math.floor(m / 1440) + "d ago"; };
+function tick() {
+  if (!ready) return;
+  const l = coolLeft();
+  $("cool").textContent = !COOLDOWN_H ? "" : l > 0 ? `Your next move: in ${fmt(l)}` : "You can move now.";
+  $("last").textContent = rep === null && st.moves && st.at ? `Last move: ${ago(Date.now() - st.at)}` : "";
+}
+function caps() { // captured pieces up to the position on screen, plus the material balance
+  const V = {p:1, n:3, b:3, r:5, q:9}, ply = view === null ? live.history().length : view, took = {w:[], b:[]};
+  live.history({verbose:true}).slice(0, ply).forEach(m => { if (m.captured) took[m.color].push(m.captured); });
+  let diff = 0; game.board().forEach(r => r.forEach(p => { if (p && p.type !== "k") diff += (p.color === "w" ? 1 : -1) * V[p.type]; }));
+  const row = (name, c) => `<div>${name} took: ${took[c].sort((a, b) => "qrbnp".indexOf(a) - "qrbnp".indexOf(b)).map(t => `<span class="${c === "w" ? "b" : "w"}">${G[t] + VS}</span>`).join("")} ${(c === "w" ? diff : -diff) > 0 ? `<b>+${Math.abs(diff)}</b>` : ""}</div>`;
+  $("cap").innerHTML = row("White", "w") + row("Black", "b");
+}
+function initName() {
+  const n = $("cname"), c = $("cin");
+  try { n.value = localStorage.getItem("eg-name") || ""; } catch (e) {}
+  n.oninput = () => { try { localStorage.setItem("eg-name", n.value); } catch (e) {} };
+  c.oninput = () => { $("cc").textContent = c.value.length + "/300"; };
+}
+
+function mkInfo(at) {
+  const r = {i: myId, at}, n = $("cname").value.trim().slice(0, 16), c = $("mcm").value.trim().slice(0, 60);
+  if (n) r.n = n; if (c) r.c = c; return r;
+}
+function infoUI(at) { // who played each move, and any comment (textContent/title only, never parsed as HTML)
+  const I = rep !== null ? repInfo : (st.info || {}), who = r => `${r.n || "Anonymous"} ID:${r.i}`;
+  document.querySelectorAll("#hist .m").forEach(e => {
+    const r = I["m" + e.dataset.p];
+    if (r) { e.title = who(r) + (r.c ? " - " + r.c : ""); if (r.c) e.classList.add("cm"); }
+  });
+  const r = I["m" + at];
+  $("mi").textContent = r ? `Move ${at}: ${who(r)}${r.c ? " - \u201c" + r.c + "\u201d" : ""}` : "";
+}
+function hashSet() { try { history.replaceState(null, "", view === null ? location.pathname + location.search : `#${st.resets + 1}-${view}`); } catch (e) {} }
+function openHash() {
+  if (hashDone) return; hashDone = true;
+  const m = /^#(\d+)-(\d+)$/.exec(location.hash); if (!m) return;
+  if (+m[1] !== st.resets + 1) return msg(`That link is for game No.${m[1]}, which isn't the current game. Check the archive.`);
+  go(+m[2]);
+}
+$("lnk").onclick = () => {
+  if (!ready || rep !== null) return msg("Links work for the live game only.");
+  const u = `${location.origin}${location.pathname}#${st.resets + 1}-${cp()}`;
+  (navigator.clipboard ? navigator.clipboard.writeText(u) : Promise.reject()).then(() => msg("Link copied."), () => prompt("Copy link:", u));
+};
+
+// Start only once the page (and the deferred Firebase module) has finished loading.
+document.addEventListener("DOMContentLoaded", () => {
+  sync().then(() => {
+    if (!ready) { $("st").textContent = "Can't reach the database. Retrying..."; msg("Can't reach the database. Check configuration and rules."); }
+  });
+  if (window.fbListen) window.fbListen(d => { if (!busy) apply(d); });
+  if (window.fbPost) {
+    window.fbChat(renderChat); initName(); window.fbPresence(myId, n => { $("pres").textContent = n > 0 ? ` · ${n} online` : ""; });
+    $("cpost").onclick = sendPost;
+    $("cin").onkeydown = e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendPost(); } };
+    $("arch").addEventListener("toggle", () => { if ($("arch").open) loadArchive(); });
+  } else { $("arch").hidden = $("bbs").hidden = true; }
+  setInterval(sync, POLL); setInterval(tick, 30000);
+  window.addEventListener("hashchange", () => { hashDone = false; if (ready) openHash(); });
+});
 </script></body></html>
